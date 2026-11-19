@@ -423,6 +423,10 @@ app.use((req, res) => {
 });
 
 // Start server
-app.listen(PORT, () => {
-  console.log(`Student Org Finance Tracker server running at http://localhost:${PORT}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(PORT, () => {
+    console.log(`Student Org Finance Tracker server running at http://localhost:${PORT}`);
+  });
+}
+
+module.exports = app;

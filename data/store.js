@@ -1,14 +1,63 @@
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const bcrypt = require('bcryptjs');
 
-const DATA_DIR = path.join(__dirname);
-const DB_FILE = path.join(DATA_DIR, 'database.json');
-const TEMP_FILE = path.join(DATA_DIR, 'database.tmp.json');
+// Determine database path with Serverless / Vercel (/var/task) read-only support
+function resolveDatabasePaths() {
+  const localDataDir = path.join(__dirname);
+  const localDbFile = path.join(localDataDir, 'database.json');
+  const localTempFile = path.join(localDataDir, 'database.tmp.json');
 
-// Ensure data folder exists
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+  const isServerless = !!(
+    process.env.VERCEL ||
+    process.env.AWS_LAMBDA_FUNCTION_NAME ||
+    __dirname.startsWith('/var/task') ||
+    __dirname.includes('/var/task')
+  );
+
+  if (isServerless) {
+    const tmpDir = path.join(os.tmpdir(), 'student-org-data');
+    try {
+      if (!fs.existsSync(tmpDir)) {
+        fs.mkdirSync(tmpDir, { recursive: true });
+      }
+    } catch (e) {
+      console.warn('Could not create tmp directory:', e.message);
+    }
+    return {
+      dir: tmpDir,
+      file: path.join(tmpDir, 'database.json'),
+      temp: path.join(tmpDir, 'database.tmp.json'),
+      seedFile: localDbFile,
+      isServerless: true
+    };
+  }
+
+  // Ensure local directory exists
+  try {
+    if (!fs.existsSync(localDataDir)) {
+      fs.mkdirSync(localDataDir, { recursive: true });
+    }
+  } catch (e) {
+    // If local dir fails (read only), fallback to tmp
+    const tmpDir = path.join(os.tmpdir(), 'student-org-data');
+    return {
+      dir: tmpDir,
+      file: path.join(tmpDir, 'database.json'),
+      temp: path.join(tmpDir, 'database.tmp.json'),
+      seedFile: localDbFile,
+      isServerless: true
+    };
+  }
+
+  return {
+    dir: localDataDir,
+    file: localDbFile,
+    temp: localTempFile,
+    seedFile: null,
+    isServerless: false
+  };
 }
 
 // Default initial state
@@ -114,7 +163,7 @@ function getDefaultData() {
         description: 'Printed 3 main gate flex banners. Bill due on Saturday',
         person: 'Apex Digital Print Shop',
         date: todayStr,
-        debtType: 'payable', // Org owes vendor
+        debtType: 'payable',
         debtStatus: 'pending',
         createdBy: 'admin',
         createdAt: now.toISOString()
@@ -128,7 +177,7 @@ function getDefaultData() {
         description: 'Pending reimbursement voucher from Robotics Dept students',
         person: 'Vikas (Robotics Head)',
         date: yesterdayStr,
-        debtType: 'receivable', // Dept owes Org
+        debtType: 'receivable',
         debtStatus: 'pending',
         createdBy: 'admin',
         createdAt: new Date(Date.now() - 86400000).toISOString()
@@ -139,42 +188,102 @@ function getDefaultData() {
 
 class Store {
   constructor() {
+    this.memoryCache = null;
+    this.paths = resolveDatabasePaths();
     this.init();
   }
 
   init() {
-    if (!fs.existsSync(DB_FILE)) {
-      const initialData = getDefaultData();
-      this.writeSync(initialData);
+    try {
+      if (!fs.existsSync(this.paths.file)) {
+        // If there is a bundled seed file at /var/task/data/database.json, try copying it to /tmp
+        if (this.paths.seedFile && fs.existsSync(this.paths.seedFile)) {
+          try {
+            const seedContent = fs.readFileSync(this.paths.seedFile, 'utf8');
+            this.memoryCache = JSON.parse(seedContent);
+            fs.writeFileSync(this.paths.file, seedContent, 'utf8');
+            return;
+          } catch (copyErr) {
+            console.warn('Could not copy seed to tmp, initializing default:', copyErr.message);
+          }
+        }
+
+        const initialData = getDefaultData();
+        this.writeSync(initialData);
+      }
+    } catch (err) {
+      console.warn('Store init error, falling back to memory state:', err.message);
+      this.memoryCache = getDefaultData();
     }
   }
 
   readSync() {
-    try {
-      if (!fs.existsSync(DB_FILE)) {
-        this.init();
-      }
-      const raw = fs.readFileSync(DB_FILE, 'utf8');
-      const data = JSON.parse(raw);
-      if (!data.sessions) data.sessions = {};
-      if (!data.users) data.users = [];
-      if (!data.transactions) data.transactions = [];
-      return data;
-    } catch (err) {
-      console.error('Error reading database, recreating default:', err);
-      const defaultData = getDefaultData();
-      this.writeSync(defaultData);
-      return defaultData;
+    if (this.memoryCache) {
+      return this.memoryCache;
     }
+
+    try {
+      if (fs.existsSync(this.paths.file)) {
+        const raw = fs.readFileSync(this.paths.file, 'utf8');
+        const data = JSON.parse(raw);
+        if (!data.sessions) data.sessions = {};
+        if (!data.users) data.users = [];
+        if (!data.transactions) data.transactions = [];
+        this.memoryCache = data;
+        return data;
+      }
+    } catch (err) {
+      console.warn('Error reading from disk file:', err.message);
+    }
+
+    // Check seed file
+    if (this.paths.seedFile && fs.existsSync(this.paths.seedFile)) {
+      try {
+        const raw = fs.readFileSync(this.paths.seedFile, 'utf8');
+        const data = JSON.parse(raw);
+        if (!data.sessions) data.sessions = {};
+        if (!data.users) data.users = [];
+        if (!data.transactions) data.transactions = [];
+        this.memoryCache = data;
+        return data;
+      } catch (e) {}
+    }
+
+    const defaultData = getDefaultData();
+    this.writeSync(defaultData);
+    return defaultData;
   }
 
   writeSync(data) {
+    this.memoryCache = data;
+
+    // Attempt to write to file
     try {
-      fs.writeFileSync(TEMP_FILE, JSON.stringify(data, null, 2), 'utf8');
-      fs.renameSync(TEMP_FILE, DB_FILE);
+      fs.writeFileSync(this.paths.temp, JSON.stringify(data, null, 2), 'utf8');
+      fs.renameSync(this.paths.temp, this.paths.file);
     } catch (err) {
-      console.error('Failed to write database file:', err);
-      fs.writeFileSync(DB_FILE, JSON.stringify(data, null, 2), 'utf8');
+      // If error is Read-Only File System (EROFS), redirect to os.tmpdir()
+      if (err.code === 'EROFS' || (err.message && err.message.includes('read-only'))) {
+        try {
+          const fallbackDir = path.join(os.tmpdir(), 'student-org-data');
+          if (!fs.existsSync(fallbackDir)) {
+            fs.mkdirSync(fallbackDir, { recursive: true });
+          }
+          this.paths.file = path.join(fallbackDir, 'database.json');
+          this.paths.temp = path.join(fallbackDir, 'database.tmp.json');
+          fs.writeFileSync(this.paths.file, JSON.stringify(data, null, 2), 'utf8');
+          return;
+        } catch (tmpErr) {
+          console.warn('Tmp write also failed, retaining memory state:', tmpErr.message);
+        }
+      } else {
+        // Fallback direct write
+        try {
+          fs.writeFileSync(this.paths.file, JSON.stringify(data, null, 2), 'utf8');
+        } catch (e) {
+          console.warn('Disk write warning (in-memory state preserved):', e.message);
+        }
+      }
     }
   }
 
@@ -256,8 +365,8 @@ class Store {
     const data = this.readSync();
     const newTx = {
       id: 'tx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
-      type: txData.type, // 'income' | 'expense'
-      category: txData.category, // 'cash_in_hand' | 'cash_in_gpay' | 'debt'
+      type: txData.type,
+      category: txData.category,
       amount: parseFloat(txData.amount) || 0,
       title: txData.title.trim(),
       description: (txData.description || '').trim(),
