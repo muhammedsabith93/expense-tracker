@@ -1,0 +1,115 @@
+{
+  "users": [
+    {
+      "id": "usr_admin",
+      "username": "admin",
+      "passwordHash": "$2b$10$0RQIX6xAKRKyxooZ/c5Q1ORv7f0m/7ftpczlw4pKbVFkqLQa1..Dy",
+      "name": "Club Treasurer",
+      "role": "admin",
+      "createdAt": "2026-11-19T06:09:00.234Z"
+    }
+  ],
+  "transactions": [
+    {
+      "id": "tx_1795069629527_jkwqb",
+      "type": "expense",
+      "category": "cash_in_hand",
+      "amount": 450,
+      "title": "Emergency Sound Cable",
+      "description": "Purchased for main stage",
+      "person": "Audio Lead",
+      "date": "2026-11-19",
+      "debtType": null,
+      "debtStatus": null,
+      "createdBy": "admin",
+      "createdAt": "2026-11-19T06:27:09.527Z",
+      "updatedAt": "2026-11-19T06:27:09.527Z"
+    },
+    {
+      "id": "tx_1",
+      "type": "income",
+      "category": "cash_in_gpay",
+      "amount": 25000,
+      "title": "College Annual Tech Fest Grant",
+      "description": "Sanctioned fund transferred by Student Affairs Council",
+      "person": "Student Affairs Office",
+      "date": "2026-11-12",
+      "debtType": null,
+      "debtStatus": null,
+      "createdBy": "admin",
+      "createdAt": "2026-11-12T06:09:00.235Z"
+    },
+    {
+      "id": "tx_2",
+      "type": "income",
+      "category": "cash_in_gpay",
+      "amount": 8000,
+      "title": "Title Sponsorship - Local Cafe",
+      "description": "Sponsorship amount received via GPay UPI for fest poster branding",
+      "person": "The Campus Brew Cafe",
+      "date": "2026-11-16",
+      "debtType": null,
+      "debtStatus": null,
+      "createdBy": "admin",
+      "createdAt": "2026-11-16T06:09:00.235Z"
+    },
+    {
+      "id": "tx_3",
+      "type": "income",
+      "category": "cash_in_hand",
+      "amount": 4500,
+      "title": "Member Annual Dues (Cash Collection)",
+      "description": "Collected ₹150 each from 30 general council members",
+      "person": "Rahul (Joint Secretary)",
+      "date": "2026-11-18",
+      "debtType": null,
+      "debtStatus": null,
+      "createdBy": "admin",
+      "createdAt": "2026-11-18T06:09:00.235Z"
+    },
+    {
+      "id": "tx_4",
+      "type": "expense",
+      "category": "cash_in_gpay",
+      "amount": 4200,
+      "title": "Auditorium Audio & Mic Rental",
+      "description": "Advance payment for speakers and wireless mics",
+      "person": "Sound Wave Rentals",
+      "date": "2026-11-18",
+      "debtType": null,
+      "debtStatus": null,
+      "createdBy": "admin",
+      "createdAt": "2026-11-18T06:09:00.235Z"
+    },
+    {
+      "id": "tx_7",
+      "type": "income",
+      "category": "debt",
+      "amount": 2000,
+      "title": "Workshop Registration Fee (Dept A)",
+      "description": "Pending reimbursement voucher from Robotics Dept students",
+      "person": "Vikas (Robotics Head)",
+      "date": "2026-11-18",
+      "debtType": "receivable",
+      "debtStatus": "pending",
+      "createdBy": "admin",
+      "createdAt": "2026-11-18T06:09:00.235Z"
+    }
+  ],
+  "sessions": {
+    "e39eb153-413e-4643-96ab-415093b96529": {
+      "userId": "usr_admin",
+      "username": "admin",
+      "name": "Club Treasurer",
+      "role": "admin",
+      "expiresAt": 1796279229489
+    },
+    "4ccfea70-4af4-4811-852e-255be25cae4b": {
+      "userId": "usr_admin",
+      "username": "admin",
+      "name": "Club Treasurer",
+      "role": "admin",
+      "expiresAt": 1796279287469
+    }
+  }
+}
