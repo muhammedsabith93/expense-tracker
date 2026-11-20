@@ -1,4 +1,6 @@
-// Student Organization Finance Tracker - Frontend Engine
+// Student Organization Finance Tracker - Frontend Engine with LocalStorage Persistence
+const STORAGE_KEY = 'student_org_transactions_ledger_v1';
+
 let currentUser = null;
 let currentPage = 'home'; // 'home' | 'ledger'
 let currentFilters = {
@@ -9,6 +11,233 @@ let currentFilters = {
 };
 let allTransactions = [];
 let searchDebounceTimeout = null;
+
+// Initial default seed if localStorage is empty
+function getDefaultSeedTransactions() {
+  const now = new Date();
+  const todayStr = now.toISOString().split('T')[0];
+  const yesterdayStr = new Date(Date.now() - 86400000).toISOString().split('T')[0];
+  const threeDaysAgoStr = new Date(Date.now() - 86400000 * 3).toISOString().split('T')[0];
+  const weekAgoStr = new Date(Date.now() - 86400000 * 7).toISOString().split('T')[0];
+
+  return [
+    {
+      id: 'tx_seed_1',
+      type: 'income',
+      category: 'cash_in_gpay',
+      amount: 25000,
+      title: 'College Annual Tech Fest Grant',
+      description: 'Sanctioned fund transferred by Student Affairs Council',
+      person: 'Student Affairs Office',
+      date: weekAgoStr,
+      debtType: null,
+      debtStatus: null,
+      createdBy: 'admin',
+      createdAt: new Date(Date.now() - 86400000 * 7).toISOString()
+    },
+    {
+      id: 'tx_seed_2',
+      type: 'income',
+      category: 'cash_in_gpay',
+      amount: 8000,
+      title: 'Title Sponsorship - Local Cafe',
+      description: 'Sponsorship amount received via GPay UPI for fest poster branding',
+      person: 'The Campus Brew Cafe',
+      date: threeDaysAgoStr,
+      debtType: null,
+      debtStatus: null,
+      createdBy: 'admin',
+      createdAt: new Date(Date.now() - 86400000 * 3).toISOString()
+    },
+    {
+      id: 'tx_seed_3',
+      type: 'income',
+      category: 'cash_in_hand',
+      amount: 4500,
+      title: 'Member Annual Dues (Cash Collection)',
+      description: 'Collected ₹150 each from 30 general council members',
+      person: 'Rahul (Joint Secretary)',
+      date: yesterdayStr,
+      debtType: null,
+      debtStatus: null,
+      createdBy: 'admin',
+      createdAt: new Date(Date.now() - 86400000).toISOString()
+    },
+    {
+      id: 'tx_seed_4',
+      type: 'expense',
+      category: 'cash_in_gpay',
+      amount: 4200,
+      title: 'Auditorium Audio & Mic Rental',
+      description: 'Advance payment for speakers and wireless mics',
+      person: 'Sound Wave Rentals',
+      date: yesterdayStr,
+      debtType: null,
+      debtStatus: null,
+      createdBy: 'admin',
+      createdAt: new Date(Date.now() - 86400000).toISOString()
+    },
+    {
+      id: 'tx_seed_5',
+      type: 'expense',
+      category: 'cash_in_hand',
+      amount: 1250,
+      title: 'Orientation Snacks & Juice',
+      description: 'Samosas and tea for faculty advisors and guest speakers',
+      person: 'Priya (Logistics Lead)',
+      date: todayStr,
+      debtType: null,
+      debtStatus: null,
+      createdBy: 'admin',
+      createdAt: now.toISOString()
+    },
+    {
+      id: 'tx_seed_6',
+      type: 'expense',
+      category: 'debt',
+      amount: 3500,
+      title: 'Fest Flex Banners & Standees',
+      description: 'Printed 3 main gate flex banners. Bill due on Saturday',
+      person: 'Apex Digital Print Shop',
+      date: todayStr,
+      debtType: 'payable',
+      debtStatus: 'pending',
+      createdBy: 'admin',
+      createdAt: now.toISOString()
+    },
+    {
+      id: 'tx_seed_7',
+      type: 'income',
+      category: 'debt',
+      amount: 2000,
+      title: 'Workshop Registration Fee (Dept A)',
+      description: 'Pending reimbursement voucher from Robotics Dept students',
+      person: 'Vikas (Robotics Head)',
+      date: yesterdayStr,
+      debtType: 'receivable',
+      debtStatus: 'pending',
+      createdBy: 'admin',
+      createdAt: new Date(Date.now() - 86400000).toISOString()
+    }
+  ];
+}
+
+// ================= LOCAL STORAGE MANAGER ================= //
+function loadTransactionsFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    }
+  } catch (e) {
+    console.warn('Error reading from localStorage:', e);
+  }
+
+  // If empty, initialize with seed data and save to localStorage
+  const seed = getDefaultSeedTransactions();
+  saveTransactionsToStorage(seed);
+  return seed;
+}
+
+function saveTransactionsToStorage(txs) {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(txs));
+  } catch (e) {
+    console.error('Failed to save to localStorage:', e);
+  }
+}
+
+// Client-side real-time calculation engine
+function calculateTotals(transactions) {
+  let totalIncome = 0;
+  let totalExpense = 0;
+  let incomeCount = 0;
+  let expenseCount = 0;
+
+  let cashInHandIncome = 0;
+  let cashInHandExpense = 0;
+
+  let cashInGPayIncome = 0;
+  let cashInGPayExpense = 0;
+
+  let pendingReceivable = 0;
+  let pendingPayable = 0;
+  let settledDebt = 0;
+  let pendingDebtCount = 0;
+
+  for (const t of transactions) {
+    const amount = parseFloat(t.amount) || 0;
+
+    if (t.category === 'debt') {
+      if (t.debtStatus === 'pending') {
+        pendingDebtCount++;
+        if (t.debtType === 'receivable' || t.type === 'income') {
+          pendingReceivable += amount;
+        } else {
+          pendingPayable += amount;
+        }
+      } else if (t.debtStatus === 'settled') {
+        settledDebt += amount;
+      }
+
+      if (t.type === 'income') {
+        totalIncome += amount;
+        incomeCount++;
+      } else {
+        totalExpense += amount;
+        expenseCount++;
+      }
+    } else {
+      if (t.type === 'income') {
+        totalIncome += amount;
+        incomeCount++;
+        if (t.category === 'cash_in_hand') cashInHandIncome += amount;
+        if (t.category === 'cash_in_gpay') cashInGPayIncome += amount;
+      } else {
+        totalExpense += amount;
+        expenseCount++;
+        if (t.category === 'cash_in_hand') cashInHandExpense += amount;
+        if (t.category === 'cash_in_gpay') cashInGPayExpense += amount;
+      }
+    }
+  }
+
+  const netBalance = totalIncome - totalExpense;
+  const cashInHandBalance = cashInHandIncome - cashInHandExpense;
+  const cashInGPayBalance = cashInGPayIncome - cashInGPayExpense;
+  const netDebtPosition = pendingReceivable - pendingPayable;
+
+  return {
+    totalIncome: Number(totalIncome.toFixed(2)),
+    totalExpense: Number(totalExpense.toFixed(2)),
+    netBalance: Number(netBalance.toFixed(2)),
+    incomeCount,
+    expenseCount,
+    wallets: {
+      cashInHand: {
+        income: Number(cashInHandIncome.toFixed(2)),
+        expense: Number(cashInHandExpense.toFixed(2)),
+        balance: Number(cashInHandBalance.toFixed(2))
+      },
+      cashInGPay: {
+        income: Number(cashInGPayIncome.toFixed(2)),
+        expense: Number(cashInGPayExpense.toFixed(2)),
+        balance: Number(cashInGPayBalance.toFixed(2))
+      },
+      debt: {
+        pendingReceivable: Number(pendingReceivable.toFixed(2)),
+        pendingPayable: Number(pendingPayable.toFixed(2)),
+        netDebtPosition: Number(netDebtPosition.toFixed(2)),
+        settledDebt: Number(settledDebt.toFixed(2)),
+        pendingCount: pendingDebtCount
+      }
+    },
+    totalTransactionsCount: transactions.length
+  };
+}
 
 // Currency formatter
 function formatCurrency(amount) {
@@ -43,6 +272,7 @@ function setToken(token) {
 function clearToken() {
   localStorage.removeItem('auth_token');
   document.cookie = 'auth_token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 UTC; SameSite=Lax';
+  // Note: We deliberately DO NOT remove STORAGE_KEY so data persists across logout and login!
 }
 
 function getCookie(name) {
@@ -103,7 +333,6 @@ async function apiFetch(url, options = {}) {
   try {
     const res = await fetch(url, { ...options, credentials: 'include', headers });
     
-    // Hide offline warning if previously shown
     const warn = document.getElementById('connection-warning');
     if (warn) warn.classList.add('hidden');
 
@@ -126,7 +355,7 @@ async function apiFetch(url, options = {}) {
     if (err.name === 'TypeError' || err.message.toLowerCase().includes('failed to fetch')) {
       const warn = document.getElementById('connection-warning');
       if (warn) warn.classList.remove('hidden');
-      throw new Error('Server unreachable. Please verify server is running on http://localhost:3000');
+      throw new Error('Server unreachable. Running with local storage.');
     }
     throw err;
   }
@@ -143,7 +372,7 @@ async function retryConnection() {
       showToast('Server still not responding', 'error');
     }
   } catch (e) {
-    showToast('Cannot reach server yet. Please check terminal.', 'error');
+    showToast('Cannot reach server yet.', 'error');
   }
 }
 
@@ -260,6 +489,7 @@ async function handleLogin(e) {
 
     setToken(data.token);
     currentUser = data.user;
+    localStorage.setItem('student_org_current_user', JSON.stringify(currentUser));
     showToast(`Welcome back, ${currentUser.name || currentUser.username}!`);
     showDashboardScreen();
     await loadDashboardData();
@@ -296,6 +526,7 @@ async function handleRegister(e) {
 
     setToken(data.token);
     currentUser = data.user;
+    localStorage.setItem('student_org_current_user', JSON.stringify(currentUser));
     showToast(`Account created! Welcome, ${currentUser.name}!`);
     showDashboardScreen();
     await loadDashboardData();
@@ -316,7 +547,8 @@ async function handleLogout() {
   }
   clearToken();
   currentUser = null;
-  showToast('Logged out successfully');
+  // NOTE: We do NOT clear localStorage.getItem(STORAGE_KEY) so your data remains intact!
+  showToast('Logged out. Your data is safely stored in local storage.');
   showAuthScreen();
 }
 
@@ -327,9 +559,22 @@ async function checkAuthStatus() {
       showAuthScreen();
       return;
     }
-    const data = await apiFetch('/api/auth/me');
-    if (data.user) {
-      currentUser = data.user;
+
+    // Try checking server session
+    try {
+      const data = await apiFetch('/api/auth/me');
+      if (data.user) {
+        currentUser = data.user;
+      }
+    } catch (e) {
+      // If server is cold or restarted, fall back to cached local user
+      const cachedUser = localStorage.getItem('student_org_current_user');
+      if (cachedUser) {
+        currentUser = JSON.parse(cachedUser);
+      }
+    }
+
+    if (currentUser) {
       showDashboardScreen();
       await loadDashboardData();
     } else {
@@ -340,21 +585,23 @@ async function checkAuthStatus() {
   }
 }
 
-// ================= DASHBOARD DATA & CALCULATIONS ================= //
+// ================= DASHBOARD DATA & CALCULATIONS (LOCAL STORAGE POWERED) ================= //
 
 async function loadDashboardData() {
-  try {
-    const summary = await apiFetch('/api/summary');
-    updateSummaryUI(summary);
-    await fetchTransactions();
+  // 1. Load transactions from localStorage
+  allTransactions = loadTransactionsFromStorage();
 
-    const now = new Date();
-    document.querySelectorAll('.last-updated-text').forEach(el => {
-      el.textContent = 'Updated at ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-    });
-  } catch (err) {
-    console.error('Failed to load dashboard:', err);
-  }
+  // 2. Calculate totals and summary directly from localStorage data
+  const summary = calculateTotals(allTransactions);
+  updateSummaryUI(summary);
+
+  // 3. Render filtered transactions
+  filterAndRenderTransactions();
+
+  const now = new Date();
+  document.querySelectorAll('.last-updated-text').forEach(el => {
+    el.textContent = 'Saved in local storage at ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  });
 }
 
 function updateSummaryUI(summary) {
@@ -423,20 +670,35 @@ function updateSummaryUI(summary) {
   }
 }
 
-// Fetch transactions with query parameters
-async function fetchTransactions() {
-  const query = new URLSearchParams();
-  if (currentFilters.category !== 'all') query.append('category', currentFilters.category);
-  if (currentFilters.type !== 'all') query.append('type', currentFilters.type);
-  if (currentFilters.debtStatus !== 'all') query.append('debtStatus', currentFilters.debtStatus);
-  if (currentFilters.search) query.append('search', currentFilters.search);
+// Filter and Render transactions from allTransactions (local storage)
+function filterAndRenderTransactions() {
+  let list = [...allTransactions];
 
-  const res = await apiFetch(`/api/transactions?${query.toString()}`);
-  allTransactions = res.transactions;
-  renderTransactionsTable(allTransactions);
+  if (currentFilters.type && currentFilters.type !== 'all') {
+    list = list.filter(t => t.type === currentFilters.type);
+  }
 
-  const totalCount = allTransactions.length;
-  document.getElementById('footer-count-text').textContent = `Showing ${totalCount} transaction${totalCount === 1 ? '' : 's'}`;
+  if (currentFilters.category && currentFilters.category !== 'all') {
+    list = list.filter(t => t.category === currentFilters.category);
+  }
+
+  if (currentFilters.debtStatus && currentFilters.debtStatus !== 'all') {
+    list = list.filter(t => t.debtStatus === currentFilters.debtStatus);
+  }
+
+  if (currentFilters.search && currentFilters.search.trim()) {
+    const q = currentFilters.search.trim().toLowerCase();
+    list = list.filter(t => 
+      (t.title && t.title.toLowerCase().includes(q)) ||
+      (t.description && t.description.toLowerCase().includes(q)) ||
+      (t.person && t.person.toLowerCase().includes(q))
+    );
+  }
+
+  renderTransactionsTable(list);
+
+  const totalCount = list.length;
+  document.getElementById('footer-count-text').textContent = `Showing ${totalCount} transaction${totalCount === 1 ? '' : 's'} (stored locally)`;
 }
 
 // Render Transactions Table
@@ -587,7 +849,7 @@ function setFilter(key, value) {
   }
 
   checkResetButtonVisibility();
-  fetchTransactions();
+  filterAndRenderTransactions();
 }
 
 function filterByCategory(cat) {
@@ -613,7 +875,7 @@ function debounceSearch() {
   searchDebounceTimeout = setTimeout(() => {
     currentFilters.search = input.value.trim();
     checkResetButtonVisibility();
-    fetchTransactions();
+    filterAndRenderTransactions();
   }, 250);
 }
 
@@ -623,7 +885,7 @@ function clearSearch() {
   document.getElementById('clear-search-btn').classList.add('hidden');
   currentFilters.search = '';
   checkResetButtonVisibility();
-  fetchTransactions();
+  filterAndRenderTransactions();
 }
 
 function resetAllFilters() {
@@ -649,7 +911,7 @@ function resetAllFilters() {
   });
 
   checkResetButtonVisibility();
-  fetchTransactions();
+  filterAndRenderTransactions();
 }
 
 function checkResetButtonVisibility() {
@@ -700,7 +962,7 @@ function openTransactionModal(editTx = null) {
     document.getElementById('edit-tx-id').value = '';
     document.getElementById('form-submit-btn-text').textContent = 'Save Transaction';
 
-    setFormType('expense'); // Default to expense as per typical usage, easily toggled
+    setFormType('expense');
     onCategoryChange('cash_in_hand');
     const radio = document.querySelector('input[name="form_category"][value="cash_in_hand"]');
     if (radio) radio.checked = true;
@@ -771,6 +1033,7 @@ function setFormTitle(title) {
   document.getElementById('form-title').value = title;
 }
 
+// Handle Save with Local Storage Persistence
 async function handleSaveTransaction(e) {
   e.preventDefault();
   const editId = document.getElementById('edit-tx-id').value;
@@ -801,39 +1064,77 @@ async function handleSaveTransaction(e) {
     return;
   }
 
-  const payload = {
-    type,
-    category,
-    amount,
-    date,
-    title,
-    person,
-    description,
-    debtType,
-    debtStatus
-  };
-
   const btn = document.getElementById('form-submit-btn');
   btn.disabled = true;
   btn.innerHTML = `<span>Saving...</span>`;
 
   try {
     if (editId) {
-      await apiFetch(`/api/transactions/${editId}`, {
+      // 1. Update in local memory
+      const index = allTransactions.findIndex(t => t.id === editId);
+      if (index !== -1) {
+        allTransactions[index] = {
+          ...allTransactions[index],
+          type,
+          category,
+          amount,
+          date,
+          title,
+          person,
+          description,
+          debtType,
+          debtStatus,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      // 2. Persist to localStorage
+      saveTransactionsToStorage(allTransactions);
+
+      // 3. Asynchronously inform server (if online)
+      apiFetch(`/api/transactions/${editId}`, {
         method: 'PUT',
-        body: JSON.stringify(payload)
-      });
-      showToast('Transaction updated successfully!');
+        body: JSON.stringify({ type, category, amount, date, title, person, description, debtType, debtStatus })
+      }).catch(err => console.warn('Server sync error (stored locally):', err));
+
+      showToast('Transaction updated and saved in local storage!');
     } else {
-      await apiFetch('/api/transactions', {
+      // 1. Create new item
+      const newTx = {
+        id: 'tx_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7),
+        type,
+        category,
+        amount,
+        title,
+        description,
+        person,
+        date: date || new Date().toISOString().split('T')[0],
+        debtType,
+        debtStatus,
+        createdBy: currentUser ? currentUser.username : 'admin',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      // 2. Add to beginning of local array
+      allTransactions.unshift(newTx);
+
+      // 3. Persist to localStorage
+      saveTransactionsToStorage(allTransactions);
+
+      // 4. Asynchronously send to server (if online)
+      apiFetch('/api/transactions', {
         method: 'POST',
-        body: JSON.stringify(payload)
-      });
-      showToast('New transaction added successfully!');
+        body: JSON.stringify(newTx)
+      }).catch(err => console.warn('Server sync error (stored locally):', err));
+
+      showToast('New transaction added and saved in local storage!');
     }
 
     closeTransactionModal();
-    await loadDashboardData();
+    // Update live UI
+    const summary = calculateTotals(allTransactions);
+    updateSummaryUI(summary);
+    filterAndRenderTransactions();
   } catch (err) {
     showToast(err.message, 'error');
   } finally {
@@ -850,6 +1151,7 @@ function editTransaction(id) {
   }
 }
 
+// Delete with Local Storage Persistence
 async function deleteTransaction(id) {
   const tx = allTransactions.find(t => t.id === id);
   const title = tx ? `"${tx.title}"` : 'this transaction';
@@ -859,15 +1161,28 @@ async function deleteTransaction(id) {
   }
 
   try {
-    await apiFetch(`/api/transactions/${id}`, { method: 'DELETE' });
-    showToast('Transaction deleted successfully');
-    await loadDashboardData();
+    // 1. Remove from local array
+    allTransactions = allTransactions.filter(t => t.id !== id);
+
+    // 2. Save to localStorage
+    saveTransactionsToStorage(allTransactions);
+
+    // 3. Asynchronously sync to server
+    apiFetch(`/api/transactions/${id}`, { method: 'DELETE' })
+      .catch(err => console.warn('Server delete sync (removed locally):', err));
+
+    showToast('Transaction deleted from local storage');
+
+    // Update live UI
+    const summary = calculateTotals(allTransactions);
+    updateSummaryUI(summary);
+    filterAndRenderTransactions();
   } catch (err) {
     showToast(err.message, 'error');
   }
 }
 
-// ================= DEBT SETTLEMENT MODAL ================= //
+// ================= DEBT SETTLEMENT WITH LOCAL STORAGE ================= //
 
 function openSettleModal(id) {
   const tx = allTransactions.find(t => t.id === id);
@@ -894,14 +1209,31 @@ async function submitSettleDebt() {
   const settlementCategory = modeRadio ? modeRadio.value : 'cash_in_gpay';
 
   try {
-    await apiFetch(`/api/transactions/${id}/settle`, {
+    // 1. Update in local array
+    const tx = allTransactions.find(t => t.id === id);
+    if (tx) {
+      tx.debtStatus = 'settled';
+      tx.settledAt = new Date().toISOString();
+      tx.settlementCategory = settlementCategory;
+      tx.updatedAt = new Date().toISOString();
+    }
+
+    // 2. Save to localStorage
+    saveTransactionsToStorage(allTransactions);
+
+    // 3. Inform server asynchronously
+    apiFetch(`/api/transactions/${id}/settle`, {
       method: 'POST',
       body: JSON.stringify({ settlementCategory })
-    });
+    }).catch(err => console.warn('Server settle sync:', err));
 
     closeSettleModal();
-    showToast('Debt marked as Settled successfully!');
-    await loadDashboardData();
+    showToast('Debt marked as Settled and saved in local storage!');
+
+    // Update live UI
+    const summary = calculateTotals(allTransactions);
+    updateSummaryUI(summary);
+    filterAndRenderTransactions();
   } catch (err) {
     showToast(err.message, 'error');
   }
@@ -910,43 +1242,57 @@ async function submitSettleDebt() {
 // ================= CSV EXPORT & DEMO DATA RESET ================= //
 
 function exportToCSV() {
-  const token = getToken();
-  const url = `/api/export/csv`;
+  const headers = ['Date', 'Type', 'Category / Mode', 'Title', 'Amount', 'Person / Vendor', 'Debt Details', 'Notes', 'Created By'];
+  const rows = allTransactions.map(t => {
+    let categoryLabel = 'Cash in Hand';
+    if (t.category === 'cash_in_gpay') categoryLabel = 'Cash in GPay';
+    if (t.category === 'debt') categoryLabel = 'Debt';
 
-  fetch(url, {
-    headers: token ? { 'Authorization': `Bearer ${token}` } : {}
-  })
-  .then(res => {
-    if (!res.ok) throw new Error('Export failed');
-    return res.blob();
-  })
-  .then(blob => {
-    const downloadUrl = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = downloadUrl;
-    a.download = `student_org_financial_ledger_${new Date().toISOString().split('T')[0]}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    showToast('Financial CSV Report downloaded successfully!');
-  })
-  .catch(err => {
-    showToast('Failed to export CSV: ' + err.message, 'error');
+    let debtDetails = '-';
+    if (t.category === 'debt') {
+      debtDetails = `${t.debtType === 'receivable' ? 'Owed to Org' : 'Org Owes'} (${t.debtStatus || 'pending'})`;
+    }
+
+    const clean = (str) => `"${(str || '').toString().replace(/"/g, '""')}"`;
+
+    return [
+      clean(t.date),
+      clean(t.type.toUpperCase()),
+      clean(categoryLabel),
+      clean(t.title),
+      t.amount,
+      clean(t.person || '-'),
+      clean(debtDetails),
+      clean(t.description || '-'),
+      clean(t.createdBy || '-')
+    ].join(',');
   });
+
+  const csvContent = [headers.join(','), ...rows].join('\r\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const downloadUrl = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = downloadUrl;
+  a.download = `student_org_financial_ledger_${new Date().toISOString().split('T')[0]}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  showToast('Financial CSV Report downloaded from local storage!');
 }
 
 async function confirmResetDemoData() {
-  if (!confirm('Would you like to reload the default sample college fest transactions? Current custom entries will be reset.')) {
+  if (!confirm('Would you like to reset your local storage records to default sample transactions? Any custom entries will be reset.')) {
     return;
   }
 
-  try {
-    await apiFetch('/api/reset-data', { method: 'POST' });
-    showToast('Sample student org data reloaded!');
-    await loadDashboardData();
-  } catch (err) {
-    showToast(err.message, 'error');
-  }
+  const seed = getDefaultSeedTransactions();
+  saveTransactionsToStorage(seed);
+  allTransactions = seed;
+  
+  showToast('Reset to default sample records!');
+  const summary = calculateTotals(allTransactions);
+  updateSummaryUI(summary);
+  filterAndRenderTransactions();
 }
 
 // Close modals when clicking backdrop
